@@ -50,7 +50,7 @@ static int    imageWidth    = 640;
 static int    imageHeight   = 480;
 static int    imageFormat   = kQTFileTypeJPEG;
 static int	  numberOfCaptures = 1;
-
+static int    delay = 0;
 // QSIF as standard video size (reduces video size dramatically *g*)
 static int    videoWidth    = 160;
 static int    videoHeight   = 120;
@@ -103,6 +103,7 @@ static struct option longOptions[] =
   {"video-input",     required_argument, 0, 'i'},
   {"num-frames",     required_argument, 0, 'n'},
   {"duration",        required_argument, 0, 'D'}, 
+  {"delay", required_argument, 0, 't'},
   {0, 0, 0, 0}
 };
 
@@ -119,6 +120,7 @@ static void  usage(char * argv[])
   printf("       --brief       : fewer messages about what is going on (default)\n");
   printf("       --video       : record a video\n");
   printf("       --continous   : keep saving frames\n");
+  printf("  -t / --delay       : delay between captures (only used if continous is specified)\n");
   printf("       --no-audio    : do not record audio\n");
   printf("  -D / --duration <#>: specify the duration of the video (default: 15 sec.)\n");
   printf("       --to-clipboard: copy image just taken to clipboard\n");
@@ -179,7 +181,7 @@ static void  processArguments(int argc, char * argv[])
   
   // Process command-line arguments
   
-  while ((c = getopt_long(argc, argv, "hvx:y:Ld:i:n:", longOptions, &optionIndex)) != -1) 
+  while ((c = getopt_long(argc, argv, "hvx:y:Ld:i:n:t:", longOptions, &optionIndex)) != -1) 
   {
     switch (c)
     {
@@ -247,6 +249,10 @@ static void  processArguments(int argc, char * argv[])
         
         case 'n':
         numberOfCaptures = atoi(optarg);
+        break;
+          
+        case 't':
+        delay = atoi(optarg);
         break;
             
         case 'i':
@@ -588,13 +594,7 @@ int  main(int argc, char * argv[])
                 return 3;
             }
         }
-        
-        // close sequence grabber?
-        
-        // SGDisposeChannel()
-        
-        
-        
+
         // save picture to file
         printf("Saving to file\n");
         OpenADefaultComponent(GraphicsExporterComponentType, imageFormat, &graphicsExporter);
@@ -662,6 +662,10 @@ int  main(int argc, char * argv[])
           }
         }
         fileIndex++;
+        if (continuousFlag == 1 && delay)
+        {
+          sleep(delay);
+        }
     } while (continuousFlag == 1);
     CloseComponent(sequenceGrabber);
     CloseComponent(graphicsExporter);
