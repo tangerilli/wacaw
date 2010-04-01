@@ -43,6 +43,7 @@ static int    verboseFlag   = 0;
 static int    videoFlag     = 0;
 static int    noAudioFlag   = 0;
 static int    toClipboardFlag= 0;
+static int	  continuousFlag = 0;
 
 static char * filename      = NULL;
 static int    imageWidth    = 640;
@@ -81,6 +82,7 @@ static struct option longOptions[] =
   {"video",   no_argument,       &videoFlag, 1}, 
   {"no-audio",no_argument,       &noAudioFlag, 1}, 
   {"to-clipboard",no_argument,   &toClipboardFlag, 1}, 
+  {"continous",no_argument,      &continuousFlag, 1},
   
   // These options don't set a flag.
   // We distinguish them by their indices. 
@@ -116,6 +118,7 @@ static void  usage(char * argv[])
   printf("       --verbose     : more messages about what is going on\n");
   printf("       --brief       : fewer messages about what is going on (default)\n");
   printf("       --video       : record a video\n");
+  printf("       --continous   : keep saving frames\n");
   printf("       --no-audio    : do not record audio\n");
   printf("  -D / --duration <#>: specify the duration of the video (default: 15 sec.)\n");
   printf("       --to-clipboard: copy image just taken to clipboard\n");
@@ -350,17 +353,33 @@ static void extendToFullPosixPath(const char * path, char * fullPath)
   }
 }
 
-static char* getFullFilename( const char* fn )
+static char* getFullFilename( const char* fn, int fileIndex )
 {
   char buffer[FILENAME_BUFFER_SIZE];
   char* extPath = malloc(FILENAME_BUFFER_SIZE);  // temporary filename storage
   
-  // need to set extension based on image_format / videoFormat
-  sprintf(buffer, "%s.%s", (fn) ? fn : "wacaw-capture", getFiletypeExtension(videoFlag ? videoFormat : imageFormat));
+  if (fileIndex == 0)
+  {
+    // need to set extension based on image_format / videoFormat
+    sprintf(buffer, "%s.%s", (fn) ? fn : "wacaw-capture", getFiletypeExtension(videoFlag ? videoFormat : imageFormat));
+  }
+  else
+  {
+    // need to set extension based on image_format / videoFormat
+    sprintf(buffer, "%s_%d.%s", (fn) ? fn : "wacaw-capture", fileIndex, getFiletypeExtension(videoFlag ? videoFormat : imageFormat));
+  }
   
   // tzeeniewheenie: now extend buffer to fully qualified path
   extendToFullPosixPath(&buffer[0], extPath);
   return extPath;
+}
+
+BOOL fileIndexExists(const char* fn, int fileIndex)
+{
+  char* actualName = getFullFilename(fn, fileIndex);
+  NSString* nameString = [[NSString alloc] initWithCString: actualName encoding: NSASCIIStringEncoding]; 
+  BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:nameString];
+  return fileExists;
 }
 
 static unsigned char* readFile( const char* fn, int* size  )
@@ -534,108 +553,132 @@ int  main(int argc, char * argv[])
       printf("SGSetChannelUsage failed.\n");
   }
   
-  // Create a QT data reference from the filename
-  char* extPath = getFullFilename(filename);
-  result = QTNewDataReferenceFromFullPathCFString(CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII),
-                                                  kQTNativeDefaultPathStyle, 0, &dataRef, &dataTypeRef);
-  free(extPath);
-  if (result != noErr) 
-  {
-    printf("Error: could not create a data reference:\nfilename: %s\n", extPath);
-    return -1;
-  }
-  
+   
   if (!videoFlag)  // Capture an image
   {
+    int fileIndex = 1;
+    while (fileIndexExists(filename, fileIndex))
+    {
+      fileIndex++;
+    }
+    printf("Next free index is %d\n", fileIndex);
+    
     // no video flag; take a picture
-
-	for (i = 0; i < numberOfCaptures; i++) 
-    {	
-		result = SGGrabPict(sequenceGrabber, &picture, &bounds, 0, grabPictOffScreen);
-    
-		if (result) 
-		{
-			printf("Error: SGGrabPict() returned error %ld!\n", (long) result);
-			// couldntGetRequiredComponent
-			return 3;
-		}
-	}
-    
-    // close sequence grabber?
-    
-    // SGDisposeChannel()
-    
-    CloseComponent(sequenceGrabber);
-    
-    // save picture to file
-    OpenADefaultComponent(GraphicsExporterComponentType, imageFormat, &graphicsExporter);
-    
-    if (!graphicsExporter) 
+    do
     {
-      printf("Error: OpenADefaultComponent() returned no graphics export component!\n");
-      return 4;
-    }
-    
-    result = GraphicsExportSetInputPicture(graphicsExporter, picture);
-    
-    // use data reference for output
-    result = GraphicsExportSetOutputDataReference(graphicsExporter, dataRef, dataTypeRef);
-    
-    GraphicsExportDoExport(graphicsExporter, NULL);
-    
-    if (toClipboardFlag)
-    {
-      // FEATURE REQUEST: copy to clipboard
-      // UPDATE: learned some more about using CF version of Pasteboard;
-      // The CFPasteboardRef & Co. as such are only 10.4+, some useful functions 
-      // even 10.5+. So I did some research on how to do this for at least 10.1+.
-      // Solution: Scrap Manager. Nice warnings about coding deprecated stuff. :p
-      // Uses carbon framework.
-      OSStatus err;
-      ScrapRef currScrap;
-      err = ClearCurrentScrap();
-      if(err != noErr)
-	      printf("Error: Clearing clipboard failed.");
-      else
-      {
-        err = GetCurrentScrap( &currScrap );
-        if(err != noErr)
-          printf("Error: Getting the clipboard failed.");
-        else
+        // Create a QT data reference from the filename
+        char* extPath = getFullFilename(filename, fileIndex);
+        result = QTNewDataReferenceFromFullPathCFString(CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII),
+                                                        kQTNativeDefaultPathStyle, 0, &dataRef, &dataTypeRef);
+        free(extPath);
+        if (result != noErr) 
         {
-          // we can use the PicHandle we got from SGGrabPict
-          err = PutScrapFlavor( currScrap, kScrapFlavorTypePicture,
-                               kScrapFlavorMaskNone, GetHandleSize((Handle)picture), 
-                               *picture );
-          
-          if( err != noErr )
-            printf("Error: Putting image to clipboard failed.");
-
-          int size = 0;
-          char* fn = getFullFilename(filename);
-          unsigned char* picData = readFile(fn, &size);
-          free(fn);
-          
-          // get bytes and stuff'em into new array
-          // size and data for base64 encoding
-          unsigned char* b64d = malloc((int)round(size * BASE64_ENCODE_SIZE_FACTOR));
-          int b64l;
-          encodeBase64( (unsigned char*)picData, size, b64d, &b64l );
-          free(picData);
-          
-          err = PutScrapFlavor( currScrap, kScrapFlavorTypeText,
-                               kScrapFlavorMaskNone, b64l, b64d );
-          free(b64d);
-          
-          if( err != noErr )
-            printf("Error: Putting base64 encoded image to clipboard failed.");
+          printf("Error: could not create a data reference:\nfilename: %s\n", extPath);
+          return -1;
         }
-      }
-    }
+      
+        for (i = 0; i < numberOfCaptures; i++) 
+        {	
+            result = SGGrabPict(sequenceGrabber, &picture, &bounds, 0, grabPictOffScreen);
+        
+            if (result) 
+            {
+                printf("Error: SGGrabPict() returned error %ld!\n", (long) result);
+                // couldntGetRequiredComponent
+                return 3;
+            }
+        }
+        
+        // close sequence grabber?
+        
+        // SGDisposeChannel()
+        
+        
+        
+        // save picture to file
+        printf("Saving to file\n");
+        OpenADefaultComponent(GraphicsExporterComponentType, imageFormat, &graphicsExporter);
+        
+        if (!graphicsExporter) 
+        {
+          printf("Error: OpenADefaultComponent() returned no graphics export component!\n");
+          return 4;
+        }
+        
+        result = GraphicsExportSetInputPicture(graphicsExporter, picture);
+        
+        // use data reference for output
+        result = GraphicsExportSetOutputDataReference(graphicsExporter, dataRef, dataTypeRef);
+        
+        GraphicsExportDoExport(graphicsExporter, NULL);
+        
+        if (toClipboardFlag)
+        {
+          // FEATURE REQUEST: copy to clipboard
+          // UPDATE: learned some more about using CF version of Pasteboard;
+          // The CFPasteboardRef & Co. as such are only 10.4+, some useful functions 
+          // even 10.5+. So I did some research on how to do this for at least 10.1+.
+          // Solution: Scrap Manager. Nice warnings about coding deprecated stuff. :p
+          // Uses carbon framework.
+          OSStatus err;
+          ScrapRef currScrap;
+          err = ClearCurrentScrap();
+          if(err != noErr)
+              printf("Error: Clearing clipboard failed.");
+          else
+          {
+            err = GetCurrentScrap( &currScrap );
+            if(err != noErr)
+              printf("Error: Getting the clipboard failed.");
+            else
+            {
+              // we can use the PicHandle we got from SGGrabPict
+              err = PutScrapFlavor( currScrap, kScrapFlavorTypePicture,
+                                   kScrapFlavorMaskNone, GetHandleSize((Handle)picture), 
+                                   *picture );
+              
+              if( err != noErr )
+                printf("Error: Putting image to clipboard failed.");
+
+              int size = 0;
+              char* fn = getFullFilename(filename, 0);
+              unsigned char* picData = readFile(fn, &size);
+              free(fn);
+              
+              // get bytes and stuff'em into new array
+              // size and data for base64 encoding
+              unsigned char* b64d = malloc((int)round(size * BASE64_ENCODE_SIZE_FACTOR));
+              int b64l;
+              encodeBase64( (unsigned char*)picData, size, b64d, &b64l );
+              free(picData);
+              
+              err = PutScrapFlavor( currScrap, kScrapFlavorTypeText,
+                                   kScrapFlavorMaskNone, b64l, b64d );
+              free(b64d);
+              
+              if( err != noErr )
+                printf("Error: Putting base64 encoded image to clipboard failed.");
+            }
+          }
+        }
+        fileIndex++;
+    } while (continuousFlag == 1);
+    CloseComponent(sequenceGrabber);
     CloseComponent(graphicsExporter);
   }
   else  //  Record the video
   {
+    // Create a QT data reference from the filename
+    char* extPath = getFullFilename(filename, 0);
+    result = QTNewDataReferenceFromFullPathCFString(CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII),
+                                                    kQTNativeDefaultPathStyle, 0, &dataRef, &dataTypeRef);
+    free(extPath);
+    if (result != noErr) 
+    {
+      printf("Error: could not create a data reference:\nfilename: %s\n", extPath);
+      return -1;
+    }
+    
     // video flag is set; so we start off a x sec. video
     // graphics world has to be set or port error (-903) will be raised
     SGSetGWorld(sequenceGrabber, NULL, NULL);
