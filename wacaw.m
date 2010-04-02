@@ -385,6 +385,7 @@ BOOL fileIndexExists(const char* fn, int fileIndex)
   char* actualName = getFullFilename(fn, fileIndex);
   NSString* nameString = [[NSString alloc] initWithCString: actualName encoding: NSASCIIStringEncoding]; 
   BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:nameString];
+  [nameString release];
   return fileExists;
 }
 
@@ -574,9 +575,11 @@ int  main(int argc, char * argv[])
     {
         // Create a QT data reference from the filename
         char* extPath = getFullFilename(filename, fileIndex);
-        result = QTNewDataReferenceFromFullPathCFString(CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII),
+        CFStringRef pathRef = CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII);
+        result = QTNewDataReferenceFromFullPathCFString(pathRef,
                                                         kQTNativeDefaultPathStyle, 0, &dataRef, &dataTypeRef);
         free(extPath);
+        CFRelease(pathRef);
         if (result != noErr) 
         {
           printf("Error: could not create a data reference:\nfilename: %s\n", extPath);
@@ -596,7 +599,7 @@ int  main(int argc, char * argv[])
         }
 
         // save picture to file
-        printf("Saving to file\n");
+        printf("Saving to %s_%d\n", filename, fileIndex);
         OpenADefaultComponent(GraphicsExporterComponentType, imageFormat, &graphicsExporter);
         
         if (!graphicsExporter) 
@@ -666,17 +669,24 @@ int  main(int argc, char * argv[])
         {
           sleep(delay);
         }
+        DisposeHandle((Handle)picture);
+        DisposeHandle(dataRef);
+        CloseComponent(graphicsExporter);
+        [pool drain];
     } while (continuousFlag == 1);
     CloseComponent(sequenceGrabber);
-    CloseComponent(graphicsExporter);
+    
   }
   else  //  Record the video
   {
     // Create a QT data reference from the filename
     char* extPath = getFullFilename(filename, 0);
-    result = QTNewDataReferenceFromFullPathCFString(CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII),
+    CFStringRef pathRef = CFStringCreateWithCString(kCFAllocatorDefault, extPath, kCFStringEncodingASCII);
+    result = QTNewDataReferenceFromFullPathCFString(pathRef,
                                                     kQTNativeDefaultPathStyle, 0, &dataRef, &dataTypeRef);
     free(extPath);
+    CFRelease(pathRef);
+    
     if (result != noErr) 
     {
       printf("Error: could not create a data reference:\nfilename: %s\n", extPath);
