@@ -372,7 +372,7 @@ static char* getFullFilename( const char* fn, int fileIndex )
   else
   {
     // need to set extension based on image_format / videoFormat
-    sprintf(buffer, "%s_%d.%s", (fn) ? fn : "wacaw-capture", fileIndex, getFiletypeExtension(videoFlag ? videoFormat : imageFormat));
+    sprintf(buffer, "%s_%05d.%s", (fn) ? fn : "wacaw-capture", fileIndex, getFiletypeExtension(videoFlag ? videoFormat : imageFormat));
   }
   
   // tzeeniewheenie: now extend buffer to fully qualified path
